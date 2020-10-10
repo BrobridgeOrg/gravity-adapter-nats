@@ -150,11 +150,11 @@ func (source *Source) HandleMessage(m *nats.Msg) {
 	if err != nil {
 		return
 	}
-
-	log.WithFields(log.Fields{
-		"event": packet.EventName,
-	}).Info("Received event")
-
+	/*
+		log.WithFields(log.Fields{
+			"event": packet.EventName,
+		}).Info("Received event")
+	*/
 	// Convert payload to JSON string
 	payload, err := json.Marshal(packet.Payload)
 	if err != nil {
