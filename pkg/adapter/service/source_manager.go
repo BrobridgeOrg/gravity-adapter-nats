@@ -16,9 +16,10 @@ type SourceInfo struct {
 	Host                string `json:"host"`
 	Port                int    `json:"port"`
 	Channel             string `json:"channel"`
-	PingInterval        int64  `json:"ping_interval"`
-	MaxPingsOutstanding int    `json:"max_pings_outstanding"`
-	MaxReconnects       int    `json:"max_reconnects"`
+	WorkerCount         *int   `json:"worker_count",omitempty`
+	PingInterval        *int64 `json:"ping_interval",omitempty`
+	MaxPingsOutstanding *int   `json:"max_pings_outstanding",omitempty`
+	MaxReconnects       *int   `json:"max_reconnects",omitempty`
 }
 
 type SourceManager struct {

@@ -12,11 +12,13 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var defaultInfo = SourceInfo{
-	PingInterval:        10,
-	MaxPingsOutstanding: 3,
-	MaxReconnects:       -1,
-}
+//var counter uint64 = 0
+
+// Default settings
+var DefaultWorkerCount int = 8
+var DefaultPingInterval int64 = 10
+var DefaultMaxPingsOutstanding int = 3
+var DefaultMaxReconnects int = -1
 
 type Packet struct {
 	EventName string      `json:"event"`
@@ -25,6 +27,8 @@ type Packet struct {
 
 type Source struct {
 	adapter             *Adapter
+	workerCount         int
+	incoming            chan *nats.Msg
 	eventBus            *eventbus.EventBus
 	name                string
 	host                string
@@ -55,27 +59,33 @@ func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
 	info := sourceInfo
 
 	// default settings
-	if defaultInfo.PingInterval != info.PingInterval {
-		info.PingInterval = defaultInfo.PingInterval
+	if info.PingInterval == nil {
+		info.PingInterval = &DefaultPingInterval
 	}
 
-	if defaultInfo.MaxPingsOutstanding != info.MaxPingsOutstanding {
-		info.MaxPingsOutstanding = defaultInfo.MaxPingsOutstanding
+	if info.MaxPingsOutstanding == nil {
+		info.MaxPingsOutstanding = &DefaultMaxPingsOutstanding
 	}
 
-	if defaultInfo.MaxReconnects != info.MaxReconnects {
-		info.MaxReconnects = defaultInfo.MaxReconnects
+	if info.MaxReconnects == nil {
+		info.MaxReconnects = &DefaultMaxReconnects
+	}
+
+	if info.WorkerCount == nil {
+		info.WorkerCount = &DefaultWorkerCount
 	}
 
 	return &Source{
 		adapter:             adapter,
+		workerCount:         *info.WorkerCount,
+		incoming:            make(chan *nats.Msg, 4096),
 		name:                name,
 		host:                info.Host,
 		port:                info.Port,
 		channel:             info.Channel,
-		pingInterval:        info.PingInterval,
-		maxPingsOutstanding: info.MaxPingsOutstanding,
-		maxReconnects:       info.MaxReconnects,
+		pingInterval:        *info.PingInterval,
+		maxPingsOutstanding: *info.MaxPingsOutstanding,
+		maxReconnects:       *info.MaxReconnects,
 	}
 }
 
@@ -85,7 +95,10 @@ func (source *Source) InitSubscription() error {
 	natsConn := source.eventBus.GetConnection()
 
 	// Subscribe with channel name
-	_, err := natsConn.Subscribe(source.channel, source.HandleMessage)
+	//_, err := natsConn.Subscribe(source.channel, source.HandleMessage)
+	_, err := natsConn.Subscribe(source.channel, func(msg *nats.Msg) {
+		source.incoming <- msg
+	})
 	if err != nil {
 		log.Warn(err)
 		return err
@@ -137,11 +150,40 @@ func (source *Source) Init() error {
 		return err
 	}
 
+	source.InitConsumers()
+
 	return source.InitSubscription()
 }
 
-func (source *Source) HandleMessage(m *nats.Msg) {
+func (source *Source) InitConsumers() {
 
+	log.WithFields(log.Fields{
+		"source":      source.name,
+		"client_name": source.adapter.clientName + "-" + source.name,
+		"channel":     source.channel,
+		"count":       source.workerCount,
+	}).Info("Initializing consumers ...")
+
+	// Multiplexing
+	for i := 0; i < source.workerCount; i++ {
+		go func() {
+			for {
+				select {
+				case msg := <-source.incoming:
+					source.HandleMessage(msg)
+				}
+			}
+		}()
+	}
+}
+
+func (source *Source) HandleMessage(m *nats.Msg) {
+	/*
+		id := atomic.AddUint64((*uint64)(&counter), 1)
+		if id%1000 == 0 {
+			log.Info(id)
+		}
+	*/
 	var packet Packet
 
 	// Parse JSON
