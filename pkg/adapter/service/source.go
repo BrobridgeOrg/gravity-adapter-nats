@@ -27,7 +27,6 @@ type Packet struct {
 type Source struct {
 	adapter             *Adapter
 	eventBus            *eventbus.EventBus
-	incoming            chan *nats.Msg
 	name                string
 	host                string
 	port                int
@@ -71,7 +70,6 @@ func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
 
 	return &Source{
 		adapter:             adapter,
-		incoming:            make(chan *nats.Msg, 1024),
 		name:                name,
 		host:                info.Host,
 		port:                info.Port,
@@ -88,8 +86,7 @@ func (source *Source) InitSubscription() error {
 	natsConn := source.eventBus.GetConnection()
 
 	// Subscribe with channel name
-	//	_, err := natsConn.Subscribe(source.channel, source.HandleMessage)
-	_, err := natsConn.ChanSubscribe(source.channel, source.incoming)
+	_, err := natsConn.Subscribe(source.channel, source.HandleMessage)
 	if err != nil {
 		log.Warn(err)
 		return err
@@ -99,15 +96,6 @@ func (source *Source) InitSubscription() error {
 }
 
 func (source *Source) Init() error {
-
-	go func() {
-		for {
-			select {
-			case msg := <-source.incoming:
-				go source.HandleMessage(msg)
-			}
-		}
-	}()
 
 	address := fmt.Sprintf("%s:%d", source.host, source.port)
 
