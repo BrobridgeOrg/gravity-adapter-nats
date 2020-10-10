@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	eventbus "github.com/BrobridgeOrg/gravity-adapter-nats/pkg/eventbus/service"
@@ -35,8 +36,14 @@ type Source struct {
 	maxReconnects       int
 }
 
+var requestPool = sync.Pool{
+	New: func() interface{} {
+		return &dsa.PublishRequest{}
+	},
+}
+
 func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
-	
+
 	// required channel
 	if len(sourceInfo.Channel) == 0 {
 		log.WithFields(log.Fields{
@@ -84,7 +91,7 @@ func (source *Source) InitSubscription() error {
 		log.Warn(err)
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -98,14 +105,14 @@ func (source *Source) Init() error {
 		"client_name": source.adapter.clientName + "-" + source.name,
 		"channel":     source.channel,
 	}).Info("Initializing source connector")
-	
+
 	options := eventbus.Options{
 		ClientName:          source.adapter.clientName + "-" + source.name,
 		PingInterval:        time.Duration(source.pingInterval),
 		MaxPingsOutstanding: source.maxPingsOutstanding,
 		MaxReconnects:       source.maxReconnects,
 	}
-	
+
 	source.eventBus = eventbus.NewEventBus(
 		address,
 		eventbus.EventBusHandler{
@@ -124,7 +131,7 @@ func (source *Source) Init() error {
 		},
 		options,
 	)
-	
+
 	err := source.eventBus.Connect()
 	if err != nil {
 		return err
@@ -146,17 +153,17 @@ func (source *Source) HandleMessage(m *nats.Msg) {
 	log.WithFields(log.Fields{
 		"event": packet.EventName,
 	}).Info("Received event")
-	
+
 	// Convert payload to JSON string
 	payload, err := json.Marshal(packet.Payload)
 	if err != nil {
 		return
 	}
 
-	request := &dsa.PublishRequest{
-		EventName: packet.EventName,
-		Payload:   string(payload),
-	}
+	// Preparing request
+	request := requestPool.Get().(*dsa.PublishRequest)
+	request.EventName = packet.EventName
+	request.Payload = string(payload)
 
 	// Getting connection from pool
 	conn, err := source.adapter.app.GetGRPCPool().Get()
@@ -174,9 +181,17 @@ func (source *Source) HandleMessage(m *nats.Msg) {
 	// Publish
 	resp, err := client.Publish(ctx, request)
 	if err != nil {
+
 		log.Error("did not connect: ", err)
+
+		// Release
+		requestPool.Put(request)
+
 		return
 	}
+
+	// Release
+	requestPool.Put(request)
 
 	if resp.Success == false {
 		log.Error("Failed to push message to data source adapter")
