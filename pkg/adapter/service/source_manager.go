@@ -1,7 +1,6 @@
 package adapter
 
 import (
-	"encoding/json"
 	"io/ioutil"
 	"os"
 
@@ -49,14 +48,14 @@ func (sm *SourceManager) Initialize() error {
 			"host": info.Host,
 			"port": info.Port,
 		}).Info("Initializing source")
-		
+
 		source := NewSource(sm.adapter, name, &info)
 		err := source.Init()
 		if err != nil {
 			log.Error(err)
 			continue
 		}
-		
+
 		sm.sources[name] = source
 	}
 
