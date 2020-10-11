@@ -205,7 +205,7 @@ func (source *Source) HandleMessage(m *nats.Msg) {
 	// Preparing request
 	request := requestPool.Get().(*dsa.PublishRequest)
 	request.EventName = packet.EventName
-	request.Payload = string(payload)
+	request.Payload = payload
 
 	// Getting connection from pool
 	conn, err := source.adapter.app.GetGRPCPool().Get()
