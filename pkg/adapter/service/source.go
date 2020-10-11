@@ -98,45 +98,19 @@ func (source *Source) InitSubscription() error {
 		"count":       source.workerCount,
 	}).Info("Initializing subscribers ...")
 
-	// Subscribe to channel
+	// Subscribe with channel name
 	natsConn := source.eventBus.GetConnection()
-
-	// Multiplexing
-	for i := 0; i < source.workerCount; i++ {
-		sub, err := natsConn.QueueSubscribe(source.channel, source.adapter.clientName+"-"+source.name, func(msg *nats.Msg) {
-			source.incoming <- msg
-		})
-		if err != nil {
-			log.Warn(err)
-		}
-
-		sub.SetPendingLimits(-1, -1)
+	sub, err := natsConn.Subscribe(source.channel, func(msg *nats.Msg) {
+		source.incoming <- msg
+	})
+	if err != nil {
+		log.Warn(err)
 	}
 
+	sub.SetPendingLimits(-1, -1)
 	natsConn.Flush()
 
 	return nil
-	/*
-		// Subscribe with channel name
-		//_, err := natsConn.Subscribe(source.channel, source.HandleMessage)
-		sub, err := natsConn.Subscribe(source.channel, func(msg *nats.Msg) {
-			source.incoming <- msg
-		})
-
-		if err != nil {
-			log.Warn(err)
-			return err
-		}
-
-		err = sub.SetPendingLimits(-1, -1)
-		log.Warn(err)
-
-		msgLimit, bytesLimit, err := sub.MaxPending()
-		log.Warn(err)
-		log.Info(msgLimit, bytesLimit)
-
-		return nil
-	*/
 }
 
 func (source *Source) Init() error {
