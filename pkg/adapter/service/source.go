@@ -12,7 +12,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-//var counter uint64 = 0
+//var counter uint64
 
 // Default settings
 var DefaultWorkerCount int = 8
@@ -103,13 +103,17 @@ func (source *Source) InitSubscription() error {
 
 	// Multiplexing
 	for i := 0; i < source.workerCount; i++ {
-		_, err := natsConn.QueueSubscribe(source.channel, source.adapter.clientName+"-"+source.name, func(msg *nats.Msg) {
+		sub, err := natsConn.QueueSubscribe(source.channel, source.adapter.clientName+"-"+source.name, func(msg *nats.Msg) {
 			source.incoming <- msg
 		})
 		if err != nil {
 			log.Warn(err)
 		}
+
+		sub.SetPendingLimits(-1, -1)
 	}
+
+	natsConn.Flush()
 
 	return nil
 	/*
