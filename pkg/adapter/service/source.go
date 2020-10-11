@@ -91,20 +91,48 @@ func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
 
 func (source *Source) InitSubscription() error {
 
+	log.WithFields(log.Fields{
+		"source":      source.name,
+		"client_name": source.adapter.clientName + "-" + source.name,
+		"channel":     source.channel,
+		"count":       source.workerCount,
+	}).Info("Initializing subscribers ...")
+
 	// Subscribe to channel
 	natsConn := source.eventBus.GetConnection()
 
-	// Subscribe with channel name
-	//_, err := natsConn.Subscribe(source.channel, source.HandleMessage)
-	_, err := natsConn.Subscribe(source.channel, func(msg *nats.Msg) {
-		source.incoming <- msg
-	})
-	if err != nil {
-		log.Warn(err)
-		return err
+	// Multiplexing
+	for i := 0; i < source.workerCount; i++ {
+		_, err := natsConn.QueueSubscribe(source.channel, source.adapter.clientName+"-"+source.name, func(msg *nats.Msg) {
+			source.incoming <- msg
+		})
+		if err != nil {
+			log.Warn(err)
+		}
 	}
 
 	return nil
+	/*
+		// Subscribe with channel name
+		//_, err := natsConn.Subscribe(source.channel, source.HandleMessage)
+		sub, err := natsConn.Subscribe(source.channel, func(msg *nats.Msg) {
+			source.incoming <- msg
+		})
+
+		if err != nil {
+			log.Warn(err)
+			return err
+		}
+
+		err = sub.SetPendingLimits(-1, -1)
+		log.Warn(err)
+
+		msgLimit, bytesLimit, err := sub.MaxPending()
+		log.Warn(err)
+		log.Info(msgLimit, bytesLimit)
+
+		return nil
+	*/
 }
 
 func (source *Source) Init() error {
@@ -150,19 +178,19 @@ func (source *Source) Init() error {
 		return err
 	}
 
-	source.InitConsumers()
+	source.InitWorkers()
 
 	return source.InitSubscription()
 }
 
-func (source *Source) InitConsumers() {
+func (source *Source) InitWorkers() {
 
 	log.WithFields(log.Fields{
 		"source":      source.name,
 		"client_name": source.adapter.clientName + "-" + source.name,
 		"channel":     source.channel,
 		"count":       source.workerCount,
-	}).Info("Initializing consumers ...")
+	}).Info("Initializing workers ...")
 
 	// Multiplexing
 	for i := 0; i < source.workerCount; i++ {
