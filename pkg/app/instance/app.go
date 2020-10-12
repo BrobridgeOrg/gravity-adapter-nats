@@ -1,6 +1,8 @@
 package instance
 
 import (
+	"runtime"
+
 	adapter_service "github.com/BrobridgeOrg/gravity-adapter-nats/pkg/adapter/service"
 	grpc_connection_pool "github.com/cfsghost/grpc-connection-pool"
 	log "github.com/sirupsen/logrus"
@@ -25,7 +27,9 @@ func NewAppInstance() *AppInstance {
 
 func (a *AppInstance) Init() error {
 
-	log.Info("Starting application")
+	log.WithFields(log.Fields{
+		"max_procs": runtime.GOMAXPROCS(0),
+	}).Info("Starting application")
 
 	// Initializing gRPC pool
 	err := a.initGRPCPool()
