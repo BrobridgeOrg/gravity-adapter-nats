@@ -176,7 +176,7 @@ func (source *Source) InitWorkers() {
 			for {
 				select {
 				case msg := <-source.incoming:
-					source.HandleMessage(msg)
+					go source.HandleMessage(msg)
 				}
 			}
 		}()
@@ -227,18 +227,13 @@ func (source *Source) HandleMessage(m *nats.Msg) {
 
 	// Publish
 	resp, err := client.Publish(ctx, request)
+	requestPool.Put(request)
 	if err != nil {
 
 		log.Error("did not connect: ", err)
 
-		// Release
-		requestPool.Put(request)
-
 		return
 	}
-
-	// Release
-	requestPool.Put(request)
 
 	if resp.Success == false {
 		log.Error("Failed to push message to data source adapter")
