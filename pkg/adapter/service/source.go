@@ -12,10 +12,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-//var counter uint64
+var counter uint64
 
 // Default settings
-var DefaultWorkerCount int = 8
+var DefaultWorkerCount int = 128
 var DefaultPingInterval int64 = 10
 var DefaultMaxPingsOutstanding int = 3
 var DefaultMaxReconnects int = -1
@@ -28,7 +28,7 @@ type Packet struct {
 type Source struct {
 	adapter             *Adapter
 	workerCount         int
-	incoming            chan *nats.Msg
+	incoming            chan []byte
 	eventBus            *eventbus.EventBus
 	name                string
 	host                string
@@ -37,6 +37,12 @@ type Source struct {
 	pingInterval        int64
 	maxPingsOutstanding int
 	maxReconnects       int
+}
+
+var packetPool = sync.Pool{
+	New: func() interface{} {
+		return &Packet{}
+	},
 }
 
 var requestPool = sync.Pool{
@@ -78,7 +84,7 @@ func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
 	return &Source{
 		adapter:             adapter,
 		workerCount:         *info.WorkerCount,
-		incoming:            make(chan *nats.Msg, 4096),
+		incoming:            make(chan []byte, 4096),
 		name:                name,
 		host:                info.Host,
 		port:                info.Port,
@@ -101,7 +107,7 @@ func (source *Source) InitSubscription() error {
 	// Subscribe with channel name
 	natsConn := source.eventBus.GetConnection()
 	sub, err := natsConn.Subscribe(source.channel, func(msg *nats.Msg) {
-		source.incoming <- msg
+		source.incoming <- msg.Data
 	})
 	if err != nil {
 		log.Warn(err)
@@ -183,18 +189,18 @@ func (source *Source) InitWorkers() {
 	}
 }
 
-func (source *Source) HandleMessage(m *nats.Msg) {
+func (source *Source) HandleMessage(msg []byte) {
 	/*
 		id := atomic.AddUint64((*uint64)(&counter), 1)
 		if id%1000 == 0 {
 			log.Info(id)
 		}
 	*/
-	var packet Packet
-
 	// Parse JSON
-	err := json.Unmarshal(m.Data, &packet)
+	packet := packetPool.Get().(*Packet)
+	err := json.Unmarshal(msg, packet)
 	if err != nil {
+		packetPool.Put(packet)
 		return
 	}
 	/*
@@ -205,6 +211,7 @@ func (source *Source) HandleMessage(m *nats.Msg) {
 	// Convert payload to JSON string
 	payload, err := json.Marshal(packet.Payload)
 	if err != nil {
+		packetPool.Put(packet)
 		return
 	}
 
@@ -212,6 +219,7 @@ func (source *Source) HandleMessage(m *nats.Msg) {
 	request := requestPool.Get().(*dsa.PublishRequest)
 	request.EventName = packet.EventName
 	request.Payload = payload
+	packetPool.Put(packet)
 
 	// Getting connection from pool
 	conn, err := source.adapter.app.GetGRPCPool().Get()
@@ -222,7 +230,7 @@ func (source *Source) HandleMessage(m *nats.Msg) {
 	client := dsa.NewDataSourceAdapterClient(conn)
 
 	// Preparing context
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*10)
 	defer cancel()
 
 	// Publish

@@ -11,7 +11,8 @@ require (
 	github.com/sirupsen/logrus v1.6.0
 	github.com/spf13/viper v1.7.1
 	go.uber.org/automaxprocs v1.3.0
-	google.golang.org/grpc v1.31.1
+	google.golang.org/grpc v1.32.0
+//	google.golang.org/grpc v1.31.1
 )
 
 //replace github.com/BrobridgeOrg/gravity-api => ../gravity-api
