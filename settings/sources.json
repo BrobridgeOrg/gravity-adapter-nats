@@ -9,7 +9,7 @@
 			"host": "0.0.0.0",
 			"port": 32803,
 			"channel": "example.accountevent",
-			"worker_count": 8,
+			"worker_count": 32,
 			"ping_interval": 10,
 			"max_pings_outstanding": 3,
 			"max_reconnects": -1

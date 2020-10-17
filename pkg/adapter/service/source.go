@@ -1,9 +1,9 @@
 package adapter
 
 import (
-	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	eventbus "github.com/BrobridgeOrg/gravity-adapter-nats/pkg/eventbus/service"
@@ -190,12 +190,11 @@ func (source *Source) InitWorkers() {
 }
 
 func (source *Source) HandleMessage(msg []byte) {
-	/*
-		id := atomic.AddUint64((*uint64)(&counter), 1)
-		if id%1000 == 0 {
-			log.Info(id)
-		}
-	*/
+	id := atomic.AddUint64((*uint64)(&counter), 1)
+	if id%1000 == 0 {
+		log.Info(id)
+	}
+
 	// Parse JSON
 	packet := packetPool.Get().(*Packet)
 	err := json.Unmarshal(msg, packet)
@@ -221,30 +220,47 @@ func (source *Source) HandleMessage(msg []byte) {
 	request.Payload = payload
 	packetPool.Put(packet)
 
-	// Getting connection from pool
-	conn, err := source.adapter.app.GetGRPCPool().Get()
+	// Getting available stream
+	val, err := source.adapter.streamPool.Get()
 	if err != nil {
-		log.Error("Failed to get connection: ", err)
+		log.Error(err)
 		return
 	}
-	client := dsa.NewDataSourceAdapterClient(conn)
 
-	// Preparing context
-	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*10)
-	defer cancel()
+	stream := val.(dsa.DataSourceAdapter_PublishEventsClient)
 
-	// Publish
-	resp, err := client.Publish(ctx, request)
-	requestPool.Put(request)
+	// Send request
+	err = stream.Send(request)
 	if err != nil {
-
-		log.Error("did not connect: ", err)
-
+		log.Error(err)
 		return
 	}
+	/*
+		// Getting connection from pool
+		conn, err := source.adapter.app.GetGRPCPool().Get()
+		if err != nil {
+			log.Error("Failed to get connection: ", err)
+			return
+		}
+		client := dsa.NewDataSourceAdapterClient(conn)
 
-	if resp.Success == false {
-		log.Error("Failed to push message to data source adapter")
-		return
-	}
+		// Preparing context
+		ctx, cancel := context.WithTimeout(context.TODO(), time.Second*10)
+		defer cancel()
+
+		// Publish
+		resp, err := client.Publish(ctx, request)
+		requestPool.Put(request)
+		if err != nil {
+
+			log.Error("did not connect: ", err)
+
+			return
+		}
+
+		if resp.Success == false {
+			log.Error("Failed to push message to data source adapter")
+			return
+		}
+	*/
 }

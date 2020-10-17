@@ -3,7 +3,7 @@ module github.com/BrobridgeOrg/gravity-adapter-nats
 go 1.13
 
 require (
-	github.com/BrobridgeOrg/gravity-api v0.2.0
+	github.com/BrobridgeOrg/gravity-api v0.2.1
 	github.com/cfsghost/grpc-connection-pool v0.3.0
 	github.com/json-iterator/go v1.1.6
 	github.com/nats-io/nats-server/v2 v2.1.8 // indirect
@@ -16,4 +16,5 @@ require (
 )
 
 //replace github.com/BrobridgeOrg/gravity-api => ../gravity-api
+
 //replace github.com/cfsghost/grpc-connection-pool => /Users/fred/works/opensource/grpc-connection-pool

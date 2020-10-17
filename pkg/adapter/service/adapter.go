@@ -1,13 +1,16 @@
 package adapter
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/BrobridgeOrg/gravity-adapter-nats/pkg/app"
+	dsa "github.com/BrobridgeOrg/gravity-api/service/dsa"
 	jsoniter "github.com/json-iterator/go"
 	log "github.com/sirupsen/logrus"
+	"google.golang.org/grpc"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -15,6 +18,7 @@ var json = jsoniter.ConfigCompatibleWithStandardLibrary
 type Adapter struct {
 	app        app.App
 	sm         *SourceManager
+	streamPool *StreamPool
 	clientName string
 }
 
@@ -29,6 +33,8 @@ func NewAdapter(a app.App) *Adapter {
 }
 
 func (adapter *Adapter) Init() error {
+
+	adapter.streamPool = NewStreamPool(adapter.app.GetGRPCPool(), adapter.streamInitializer)
 
 	// Using hostname (pod name) by default
 	host, err := os.Hostname()
@@ -48,4 +54,9 @@ func (adapter *Adapter) Init() error {
 	}
 
 	return nil
+}
+
+func (adapter *Adapter) streamInitializer(conn *grpc.ClientConn) (interface{}, error) {
+	client := dsa.NewDataSourceAdapterClient(conn)
+	return client.PublishEvents(context.Background())
 }
