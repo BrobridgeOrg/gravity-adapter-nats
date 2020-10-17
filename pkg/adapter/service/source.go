@@ -3,7 +3,6 @@ package adapter
 import (
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	eventbus "github.com/BrobridgeOrg/gravity-adapter-nats/pkg/eventbus/service"
@@ -190,11 +189,12 @@ func (source *Source) InitWorkers() {
 }
 
 func (source *Source) HandleMessage(msg []byte) {
-	id := atomic.AddUint64((*uint64)(&counter), 1)
-	if id%1000 == 0 {
-		log.Info(id)
-	}
-
+	/*
+		id := atomic.AddUint64((*uint64)(&counter), 1)
+		if id%1000 == 0 {
+			log.Info(id)
+		}
+	*/
 	// Parse JSON
 	packet := packetPool.Get().(*Packet)
 	err := json.Unmarshal(msg, packet)
