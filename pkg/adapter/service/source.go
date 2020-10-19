@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -9,6 +10,7 @@ import (
 	dsa "github.com/BrobridgeOrg/gravity-api/service/dsa"
 	"github.com/nats-io/nats.go"
 	log "github.com/sirupsen/logrus"
+	"google.golang.org/grpc"
 )
 
 var counter uint64
@@ -129,6 +131,15 @@ func (source *Source) Init() error {
 		"channel":     source.channel,
 	}).Info("Initializing source connector")
 
+	// Initializing gRPC streams
+	p := source.adapter.app.GetGRPCPool()
+
+	// Register initializer for stream
+	p.SetStreamInitializer("publish", func(conn *grpc.ClientConn) (interface{}, error) {
+		client := dsa.NewDataSourceAdapterClient(conn)
+		return client.PublishEvents(context.Background())
+	})
+
 	options := eventbus.Options{
 		ClientName:          source.adapter.clientName + "-" + source.name,
 		PingInterval:        time.Duration(source.pingInterval),
@@ -220,47 +231,14 @@ func (source *Source) HandleMessage(msg []byte) {
 	request.Payload = payload
 	packetPool.Put(packet)
 
-	// Getting available stream
-	val, err := source.adapter.streamPool.Get()
+	// Getting stream from pool
+	err = source.adapter.app.GetGRPCPool().GetStream("publish", func(s interface{}) error {
+
+		// Send request
+		return s.(dsa.DataSourceAdapter_PublishEventsClient).Send(request)
+	})
 	if err != nil {
-		log.Error(err)
+		log.Error("Failed to get available stream:", err)
 		return
 	}
-
-	stream := val.(dsa.DataSourceAdapter_PublishEventsClient)
-
-	// Send request
-	err = stream.Send(request)
-	if err != nil {
-		log.Error(err)
-		return
-	}
-	/*
-		// Getting connection from pool
-		conn, err := source.adapter.app.GetGRPCPool().Get()
-		if err != nil {
-			log.Error("Failed to get connection: ", err)
-			return
-		}
-		client := dsa.NewDataSourceAdapterClient(conn)
-
-		// Preparing context
-		ctx, cancel := context.WithTimeout(context.TODO(), time.Second*10)
-		defer cancel()
-
-		// Publish
-		resp, err := client.Publish(ctx, request)
-		requestPool.Put(request)
-		if err != nil {
-
-			log.Error("did not connect: ", err)
-
-			return
-		}
-
-		if resp.Success == false {
-			log.Error("Failed to push message to data source adapter")
-			return
-		}
-	*/
 }
