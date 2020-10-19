@@ -4,7 +4,7 @@ go 1.13
 
 require (
 	github.com/BrobridgeOrg/gravity-api v0.2.1
-	github.com/cfsghost/grpc-connection-pool v0.5.0
+	github.com/cfsghost/grpc-connection-pool v0.6.0
 	github.com/json-iterator/go v1.1.6
 	github.com/nats-io/nats-server/v2 v2.1.8 // indirect
 	github.com/nats-io/nats.go v1.10.0
