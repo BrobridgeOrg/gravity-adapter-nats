@@ -237,6 +237,7 @@ func (source *Source) HandleMessage(msg []byte) {
 		// Send request
 		return s.(dsa.DataSourceAdapter_PublishEventsClient).Send(request)
 	})
+	requestPool.Put(request)
 	if err != nil {
 		log.Error("Failed to get available stream:", err)
 		return
