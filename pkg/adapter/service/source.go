@@ -85,7 +85,7 @@ func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
 	return &Source{
 		adapter:             adapter,
 		workerCount:         *info.WorkerCount,
-		incoming:            make(chan []byte, 4096),
+		incoming:            make(chan []byte, 102400),
 		name:                name,
 		host:                info.Host,
 		port:                info.Port,
