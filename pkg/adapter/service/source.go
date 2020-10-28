@@ -30,6 +30,7 @@ type Source struct {
 	adapter             *Adapter
 	workerCount         int
 	incoming            chan []byte
+	readyMsgs           chan *dsa.PublishRequest
 	eventBus            *eventbus.EventBus
 	name                string
 	host                string
@@ -86,6 +87,7 @@ func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
 		adapter:             adapter,
 		workerCount:         *info.WorkerCount,
 		incoming:            make(chan []byte, 102400),
+		readyMsgs:           make(chan *dsa.PublishRequest, 102400),
 		name:                name,
 		host:                info.Host,
 		port:                info.Port,
@@ -172,12 +174,13 @@ func (source *Source) Init() error {
 		return err
 	}
 
-	source.InitWorkers()
+	go source.eventReceiver()
+	go source.messageHandler()
 
 	return source.InitSubscription()
 }
 
-func (source *Source) InitWorkers() {
+func (source *Source) eventReceiver() {
 
 	log.WithFields(log.Fields{
 		"source":      source.name,
@@ -186,20 +189,25 @@ func (source *Source) InitWorkers() {
 		"count":       source.workerCount,
 	}).Info("Initializing workers ...")
 
-	// Multiplexing
-	for i := 0; i < source.workerCount; i++ {
-		go func() {
-			for {
-				select {
-				case msg := <-source.incoming:
-					go source.HandleMessage(msg)
-				}
-			}
-		}()
+	for {
+		select {
+		case msg := <-source.incoming:
+			source.HandleEvent(msg)
+		}
 	}
 }
 
-func (source *Source) HandleMessage(msg []byte) {
+func (source *Source) messageHandler() {
+
+	for {
+		select {
+		case msg := <-source.readyMsgs:
+			source.HandleMessage(msg)
+		}
+	}
+}
+
+func (source *Source) HandleEvent(msg []byte) {
 	/*
 		id := atomic.AddUint64((*uint64)(&counter), 1)
 		if id%1000 == 0 {
@@ -231,8 +239,13 @@ func (source *Source) HandleMessage(msg []byte) {
 	request.Payload = payload
 	packetPool.Put(packet)
 
+	source.readyMsgs <- request
+}
+
+func (source *Source) HandleMessage(request *dsa.PublishRequest) {
+
 	// Getting stream from pool
-	err = source.adapter.app.GetGRPCPool().GetStream("publish", func(s interface{}) error {
+	err := source.adapter.app.GetGRPCPool().GetStream("publish", func(s interface{}) error {
 
 		// Send request
 		return s.(dsa.DataSourceAdapter_PublishEventsClient).Send(request)
