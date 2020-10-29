@@ -3,11 +3,11 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	_ "go.uber.org/automaxprocs"
 
 	app "github.com/BrobridgeOrg/gravity-adapter-nats/pkg/app/instance"
 )
@@ -42,6 +42,7 @@ func init() {
 		log.Warn("No configuration file was loaded")
 	}
 
+	runtime.GOMAXPROCS(8)
 	/*
 		return
 		go func() {
