@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/BrobridgeOrg/gravity-adapter-nats/pkg/adapter/service/parallel_chunked_flow"
 	eventbus "github.com/BrobridgeOrg/gravity-adapter-nats/pkg/eventbus/service"
 	dsa "github.com/BrobridgeOrg/gravity-api/service/dsa"
 	"github.com/nats-io/nats.go"
@@ -27,10 +28,10 @@ type Packet struct {
 }
 
 type Source struct {
-	adapter             *Adapter
-	workerCount         int
-	incoming            chan []byte
-	readyMsgs           chan *dsa.PublishRequest
+	adapter     *Adapter
+	workerCount int
+	incoming    chan []byte
+	//	requests            chan *dsa.PublishRequest
 	eventBus            *eventbus.EventBus
 	name                string
 	host                string
@@ -39,6 +40,7 @@ type Source struct {
 	pingInterval        int64
 	maxPingsOutstanding int
 	maxReconnects       int
+	parser              *parallel_chunked_flow.ParallelChunkedFlow
 }
 
 var packetPool = sync.Pool{
@@ -84,10 +86,10 @@ func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
 	}
 
 	return &Source{
-		adapter:             adapter,
-		workerCount:         *info.WorkerCount,
-		incoming:            make(chan []byte, 102400),
-		readyMsgs:           make(chan *dsa.PublishRequest, 102400),
+		adapter:     adapter,
+		workerCount: *info.WorkerCount,
+		incoming:    make(chan []byte, 102400),
+		//		requests:            make(chan *dsa.PublishRequest, 102400),
 		name:                name,
 		host:                info.Host,
 		port:                info.Port,
@@ -95,6 +97,7 @@ func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
 		pingInterval:        *info.PingInterval,
 		maxPingsOutstanding: *info.MaxPingsOutstanding,
 		maxReconnects:       *info.MaxReconnects,
+		parser:              parallel_chunked_flow.NewParallelChunckedFlow(),
 	}
 }
 
@@ -142,6 +145,39 @@ func (source *Source) Init() error {
 		return client.PublishEvents(context.Background())
 	})
 
+	// Initializing parser
+	source.parser.Handler = func(data interface{}) interface{} {
+		/*
+			id := atomic.AddUint64((*uint64)(&counter), 1)
+			if id%1000 == 0 {
+				log.Info(id)
+			}
+		*/
+		// Parse JSON
+		packet := packetPool.Get().(*Packet)
+		err := json.Unmarshal(data.([]byte), packet)
+		if err != nil {
+			packetPool.Put(packet)
+			return nil
+		}
+
+		// Convert payload to JSON string
+		payload, err := json.Marshal(packet.Payload)
+		if err != nil {
+			packetPool.Put(packet)
+			return nil
+		}
+
+		// Preparing request
+		request := requestPool.Get().(*dsa.PublishRequest)
+		request.EventName = packet.EventName
+		request.Payload = payload
+		packetPool.Put(packet)
+
+		return request
+	}
+	source.parser.Initialize()
+
 	options := eventbus.Options{
 		ClientName:          source.adapter.clientName + "-" + source.name,
 		PingInterval:        time.Duration(source.pingInterval),
@@ -175,7 +211,7 @@ func (source *Source) Init() error {
 	}
 
 	go source.eventReceiver()
-	go source.messageHandler()
+	go source.requestHandler()
 
 	return source.InitSubscription()
 }
@@ -192,28 +228,32 @@ func (source *Source) eventReceiver() {
 	for {
 		select {
 		case msg := <-source.incoming:
-			source.HandleEvent(msg)
+			//source.HandleEvent(msg)
+			source.parser.Push(msg)
 		}
 	}
 }
 
-func (source *Source) messageHandler() {
+func (source *Source) requestHandler() {
 
 	for {
 		select {
-		case msg := <-source.readyMsgs:
-			source.HandleMessage(msg)
+		//case req := <-source.requests:
+		case req := <-source.parser.Output():
+			source.HandleRequest(req.(*dsa.PublishRequest))
+			requestPool.Put(req)
 		}
 	}
 }
 
+/*
 func (source *Source) HandleEvent(msg []byte) {
-	/*
-		id := atomic.AddUint64((*uint64)(&counter), 1)
-		if id%1000 == 0 {
-			log.Info(id)
-		}
-	*/
+
+	id := atomic.AddUint64((*uint64)(&counter), 1)
+	if id%1000 == 0 {
+		log.Info(id)
+	}
+
 	// Parse JSON
 	packet := packetPool.Get().(*Packet)
 	err := json.Unmarshal(msg, packet)
@@ -221,11 +261,11 @@ func (source *Source) HandleEvent(msg []byte) {
 		packetPool.Put(packet)
 		return
 	}
-	/*
-		log.WithFields(log.Fields{
-			"event": packet.EventName,
-		}).Info("Received event")
-	*/
+
+	log.WithFields(log.Fields{
+		"event": packet.EventName,
+	}).Info("Received event")
+
 	// Convert payload to JSON string
 	payload, err := json.Marshal(packet.Payload)
 	if err != nil {
@@ -239,10 +279,10 @@ func (source *Source) HandleEvent(msg []byte) {
 	request.Payload = payload
 	packetPool.Put(packet)
 
-	source.readyMsgs <- request
+	source.requests <- request
 }
-
-func (source *Source) HandleMessage(request *dsa.PublishRequest) {
+*/
+func (source *Source) HandleRequest(request *dsa.PublishRequest) {
 
 	// Getting stream from pool
 	err := source.adapter.app.GetGRPCPool().GetStream("publish", func(s interface{}) error {
@@ -250,7 +290,6 @@ func (source *Source) HandleMessage(request *dsa.PublishRequest) {
 		// Send request
 		return s.(dsa.DataSourceAdapter_PublishEventsClient).Send(request)
 	})
-	requestPool.Put(request)
 	if err != nil {
 		log.Error("Failed to get available stream:", err)
 		return
