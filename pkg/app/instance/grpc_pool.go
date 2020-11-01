@@ -18,8 +18,8 @@ func (a *AppInstance) initGRPCPool() error {
 	}).Info("Initializing gRPC pool")
 
 	options := &grpc_connection_pool.Options{
-		InitCap:     128,
-		MaxCap:      128,
+		InitCap:     1,
+		MaxCap:      1,
 		DialTimeout: time.Second * 20,
 	}
 
