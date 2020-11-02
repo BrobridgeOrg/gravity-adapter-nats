@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/BrobridgeOrg/gravity-adapter-nats/pkg/adapter/service/parallel_chunked_flow"
 	eventbus "github.com/BrobridgeOrg/gravity-adapter-nats/pkg/eventbus/service"
 	dsa "github.com/BrobridgeOrg/gravity-api/service/dsa"
+	parallel_chunked_flow "github.com/cfsghost/parallel-chunked-flow"
 	"github.com/nats-io/nats.go"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -28,10 +28,9 @@ type Packet struct {
 }
 
 type Source struct {
-	adapter     *Adapter
-	workerCount int
-	incoming    chan []byte
-	//	requests            chan *dsa.PublishRequest
+	adapter             *Adapter
+	workerCount         int
+	incoming            chan []byte
 	eventBus            *eventbus.EventBus
 	name                string
 	host                string
@@ -85,6 +84,43 @@ func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
 		info.WorkerCount = &DefaultWorkerCount
 	}
 
+	// Initialize parapllel chunked flow
+	pcfOpts := parallel_chunked_flow.Options{
+		BufferSize: 1024000,
+		ChunkSize:  1024,
+		ChunkCount: 128,
+		Handler: func(data interface{}) interface{} {
+			/*
+				id := atomic.AddUint64((*uint64)(&counter), 1)
+				if id%1000 == 0 {
+					log.Info(id)
+				}
+			*/
+			// Parse JSON
+			packet := packetPool.Get().(*Packet)
+			err := json.Unmarshal(data.([]byte), packet)
+			if err != nil {
+				packetPool.Put(packet)
+				return nil
+			}
+
+			// Convert payload to JSON string
+			payload, err := json.Marshal(packet.Payload)
+			if err != nil {
+				packetPool.Put(packet)
+				return nil
+			}
+
+			// Preparing request
+			request := requestPool.Get().(*dsa.PublishRequest)
+			request.EventName = packet.EventName
+			request.Payload = payload
+			packetPool.Put(packet)
+
+			return request
+		},
+	}
+
 	return &Source{
 		adapter:     adapter,
 		workerCount: *info.WorkerCount,
@@ -97,7 +133,7 @@ func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
 		pingInterval:        *info.PingInterval,
 		maxPingsOutstanding: *info.MaxPingsOutstanding,
 		maxReconnects:       *info.MaxReconnects,
-		parser:              parallel_chunked_flow.NewParallelChunckedFlow(),
+		parser:              parallel_chunked_flow.NewParallelChunkedFlow(&pcfOpts),
 	}
 }
 
@@ -144,39 +180,6 @@ func (source *Source) Init() error {
 		client := dsa.NewDataSourceAdapterClient(conn)
 		return client.PublishEvents(context.Background())
 	})
-
-	// Initializing parser
-	source.parser.Handler = func(data interface{}) interface{} {
-		/*
-			id := atomic.AddUint64((*uint64)(&counter), 1)
-			if id%1000 == 0 {
-				log.Info(id)
-			}
-		*/
-		// Parse JSON
-		packet := packetPool.Get().(*Packet)
-		err := json.Unmarshal(data.([]byte), packet)
-		if err != nil {
-			packetPool.Put(packet)
-			return nil
-		}
-
-		// Convert payload to JSON string
-		payload, err := json.Marshal(packet.Payload)
-		if err != nil {
-			packetPool.Put(packet)
-			return nil
-		}
-
-		// Preparing request
-		request := requestPool.Get().(*dsa.PublishRequest)
-		request.EventName = packet.EventName
-		request.Payload = payload
-		packetPool.Put(packet)
-
-		return request
-	}
-	source.parser.Initialize()
 
 	options := eventbus.Options{
 		ClientName:          source.adapter.clientName + "-" + source.name,
@@ -246,42 +249,6 @@ func (source *Source) requestHandler() {
 	}
 }
 
-/*
-func (source *Source) HandleEvent(msg []byte) {
-
-	id := atomic.AddUint64((*uint64)(&counter), 1)
-	if id%1000 == 0 {
-		log.Info(id)
-	}
-
-	// Parse JSON
-	packet := packetPool.Get().(*Packet)
-	err := json.Unmarshal(msg, packet)
-	if err != nil {
-		packetPool.Put(packet)
-		return
-	}
-
-	log.WithFields(log.Fields{
-		"event": packet.EventName,
-	}).Info("Received event")
-
-	// Convert payload to JSON string
-	payload, err := json.Marshal(packet.Payload)
-	if err != nil {
-		packetPool.Put(packet)
-		return
-	}
-
-	// Preparing request
-	request := requestPool.Get().(*dsa.PublishRequest)
-	request.EventName = packet.EventName
-	request.Payload = payload
-	packetPool.Put(packet)
-
-	source.requests <- request
-}
-*/
 func (source *Source) HandleRequest(request *dsa.PublishRequest) {
 
 	// Getting stream from pool
