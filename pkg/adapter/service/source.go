@@ -89,7 +89,7 @@ func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
 		BufferSize: 1024000,
 		ChunkSize:  1024,
 		ChunkCount: 128,
-		Handler: func(data interface{}) interface{} {
+		Handler: func(data interface{}, output chan interface{}) {
 			/*
 				id := atomic.AddUint64((*uint64)(&counter), 1)
 				if id%1000 == 0 {
@@ -101,14 +101,14 @@ func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
 			err := json.Unmarshal(data.([]byte), packet)
 			if err != nil {
 				packetPool.Put(packet)
-				return nil
+				return
 			}
 
 			// Convert payload to JSON string
 			payload, err := json.Marshal(packet.Payload)
 			if err != nil {
 				packetPool.Put(packet)
-				return nil
+				return
 			}
 
 			// Preparing request
@@ -117,7 +117,7 @@ func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
 			request.Payload = payload
 			packetPool.Put(packet)
 
-			return request
+			output <- request
 		},
 	}
 
