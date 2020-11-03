@@ -86,7 +86,7 @@ func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
 
 	// Initialize parapllel chunked flow
 	pcfOpts := parallel_chunked_flow.Options{
-		BufferSize: 102400,
+		BufferSize: 204800,
 		ChunkSize:  512,
 		ChunkCount: 512,
 		Handler: func(data interface{}, output chan interface{}) {
@@ -124,7 +124,7 @@ func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
 	return &Source{
 		adapter:     adapter,
 		workerCount: *info.WorkerCount,
-		incoming:    make(chan []byte, 102400),
+		incoming:    make(chan []byte, 204800),
 		//		requests:            make(chan *dsa.PublishRequest, 102400),
 		name:                name,
 		host:                info.Host,
