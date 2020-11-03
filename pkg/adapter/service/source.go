@@ -86,9 +86,9 @@ func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
 
 	// Initialize parapllel chunked flow
 	pcfOpts := parallel_chunked_flow.Options{
-		BufferSize: 1024000,
-		ChunkSize:  1024,
-		ChunkCount: 128,
+		BufferSize: 102400,
+		ChunkSize:  512,
+		ChunkCount: 512,
 		Handler: func(data interface{}, output chan interface{}) {
 			/*
 				id := atomic.AddUint64((*uint64)(&counter), 1)
