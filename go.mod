@@ -1,6 +1,6 @@
 module github.com/BrobridgeOrg/gravity-adapter-nats
 
-go 1.13
+go 1.15
 
 require (
 	github.com/BrobridgeOrg/gravity-api v0.2.1
