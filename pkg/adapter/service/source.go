@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"unsafe"
 
 	eventbus "github.com/BrobridgeOrg/gravity-adapter-nats/pkg/eventbus/service"
 	dsa "github.com/BrobridgeOrg/gravity-api/service/dsa"
 	parallel_chunked_flow "github.com/cfsghost/parallel-chunked-flow"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/nats-io/nats.go"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -42,16 +44,23 @@ type Source struct {
 	parser              *parallel_chunked_flow.ParallelChunkedFlow
 }
 
+/*
 var packetPool = sync.Pool{
 	New: func() interface{} {
 		return &Packet{}
 	},
 }
-
+*/
 var requestPool = sync.Pool{
 	New: func() interface{} {
 		return &dsa.PublishRequest{}
 	},
+}
+
+func StrToBytes(s string) []byte {
+	x := (*[2]uintptr)(unsafe.Pointer(&s))
+	h := [3]uintptr{x[0], x[1], x[1]}
+	return *(*[]byte)(unsafe.Pointer(&h))
 }
 
 func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
@@ -96,26 +105,31 @@ func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
 					log.Info(id)
 				}
 			*/
-			// Parse JSON
-			packet := packetPool.Get().(*Packet)
-			err := json.Unmarshal(data.([]byte), packet)
-			if err != nil {
-				packetPool.Put(packet)
-				return
-			}
-
-			// Convert payload to JSON string
-			payload, err := json.Marshal(packet.Payload)
-			if err != nil {
-				packetPool.Put(packet)
-				return
-			}
+			/*
+				// Parse JSON
+				packet := packetPool.Get().(*Packet)
+				err := json.Unmarshal(data.([]byte), packet)
+				if err != nil {
+					packetPool.Put(packet)
+					return
+				}
+					// Convert payload to JSON string
+					payload, err := json.Marshal(packet.Payload)
+					if err != nil {
+						packetPool.Put(packet)
+						return
+					}
+			*/
+			eventName := jsoniter.Get(data.([]byte), "event").ToString()
+			payload := jsoniter.Get(data.([]byte), "payload").ToString()
+			//			log.Info(test)
 
 			// Preparing request
 			request := requestPool.Get().(*dsa.PublishRequest)
-			request.EventName = packet.EventName
-			request.Payload = payload
-			packetPool.Put(packet)
+			//request.EventName = packet.EventName
+			request.EventName = eventName
+			request.Payload = StrToBytes(payload)
+			//			packetPool.Put(packet)
 
 			output <- request
 		},
