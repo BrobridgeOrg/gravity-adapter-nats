@@ -1,7 +1,6 @@
 package adapter
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -9,11 +8,11 @@ import (
 
 	eventbus "github.com/BrobridgeOrg/gravity-adapter-nats/pkg/eventbus/service"
 	dsa "github.com/BrobridgeOrg/gravity-api/service/dsa"
+	gravity_adapter "github.com/BrobridgeOrg/gravity-sdk/adapter"
 	parallel_chunked_flow "github.com/cfsghost/parallel-chunked-flow"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/nats-io/nats.go"
 	log "github.com/sirupsen/logrus"
-	"google.golang.org/grpc"
 )
 
 var counter uint64
@@ -31,6 +30,7 @@ type Packet struct {
 
 type Source struct {
 	adapter             *Adapter
+	connector           *gravity_adapter.AdapterConnector
 	workerCount         int
 	incoming            chan []byte
 	eventBus            *eventbus.EventBus
@@ -137,6 +137,7 @@ func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
 
 	return &Source{
 		adapter:     adapter,
+		connector:   gravity_adapter.NewAdapterConnector(),
 		workerCount: *info.WorkerCount,
 		incoming:    make(chan []byte, 204800),
 		//		requests:            make(chan *dsa.PublishRequest, 102400),
@@ -186,15 +187,22 @@ func (source *Source) Init() error {
 		"channel":     source.channel,
 	}).Info("Initializing source connector")
 
-	// Initializing gRPC streams
-	p := source.adapter.app.GetGRPCPool()
+	// Initializing gravity adapter connector
+	opts := gravity_adapter.NewOptions()
+	err := source.connector.Connect(address, opts)
+	if err != nil {
+		return err
+	}
+	/*
+		// Initializing gRPC streams
+		p := source.adapter.app.GetGRPCPool()
 
-	// Register initializer for stream
-	p.SetStreamInitializer("publish", func(conn *grpc.ClientConn) (interface{}, error) {
-		client := dsa.NewDataSourceAdapterClient(conn)
-		return client.PublishEvents(context.Background())
-	})
-
+		// Register initializer for stream
+		p.SetStreamInitializer("publish", func(conn *grpc.ClientConn) (interface{}, error) {
+			client := dsa.NewDataSourceAdapterClient(conn)
+			return client.PublishEvents(context.Background())
+		})
+	*/
 	options := eventbus.Options{
 		ClientName:          source.adapter.clientName + "-" + source.name,
 		PingInterval:        time.Duration(source.pingInterval),
@@ -206,13 +214,6 @@ func (source *Source) Init() error {
 		address,
 		eventbus.EventBusHandler{
 			Reconnect: func(natsConn *nats.Conn) {
-				/*
-					err := source.InitSubscription()
-					if err != nil {
-						log.Error(err)
-						return
-					}
-				*/
 				log.Warn("re-connected to event server")
 			},
 			Disconnect: func(natsConn *nats.Conn) {
@@ -222,7 +223,7 @@ func (source *Source) Init() error {
 		options,
 	)
 
-	err := source.eventBus.Connect()
+	err = source.eventBus.Connect()
 	if err != nil {
 		return err
 	}
@@ -265,14 +266,17 @@ func (source *Source) requestHandler() {
 
 func (source *Source) HandleRequest(request *dsa.PublishRequest) {
 
-	// Getting stream from pool
-	err := source.adapter.app.GetGRPCPool().GetStream("publish", func(s interface{}) error {
+	source.connector.Publish(request.EventName, request.Payload, nil)
+	/*
+		// Getting stream from pool
+		err := source.adapter.app.GetGRPCPool().GetStream("publish", func(s interface{}) error {
 
-		// Send request
-		return s.(dsa.DataSourceAdapter_PublishEventsClient).Send(request)
-	})
-	if err != nil {
-		log.Error("Failed to get available stream:", err)
-		return
-	}
+			// Send request
+			return s.(dsa.DataSourceAdapter_PublishEventsClient).Send(request)
+		})
+		if err != nil {
+			log.Error("Failed to get available stream:", err)
+			return
+		}
+	*/
 }
