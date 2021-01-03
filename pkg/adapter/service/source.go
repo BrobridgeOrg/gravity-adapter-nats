@@ -8,7 +8,6 @@ import (
 
 	eventbus "github.com/BrobridgeOrg/gravity-adapter-nats/pkg/eventbus/service"
 	dsa "github.com/BrobridgeOrg/gravity-api/service/dsa"
-	gravity_adapter "github.com/BrobridgeOrg/gravity-sdk/adapter"
 	parallel_chunked_flow "github.com/cfsghost/parallel-chunked-flow"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/nats-io/nats.go"
@@ -30,7 +29,6 @@ type Packet struct {
 
 type Source struct {
 	adapter             *Adapter
-	connector           *gravity_adapter.AdapterConnector
 	workerCount         int
 	incoming            chan []byte
 	eventBus            *eventbus.EventBus
@@ -44,13 +42,6 @@ type Source struct {
 	parser              *parallel_chunked_flow.ParallelChunkedFlow
 }
 
-/*
-var packetPool = sync.Pool{
-	New: func() interface{} {
-		return &Packet{}
-	},
-}
-*/
 var requestPool = sync.Pool{
 	New: func() interface{} {
 		return &dsa.PublishRequest{}
@@ -105,31 +96,13 @@ func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
 					log.Info(id)
 				}
 			*/
-			/*
-				// Parse JSON
-				packet := packetPool.Get().(*Packet)
-				err := json.Unmarshal(data.([]byte), packet)
-				if err != nil {
-					packetPool.Put(packet)
-					return
-				}
-					// Convert payload to JSON string
-					payload, err := json.Marshal(packet.Payload)
-					if err != nil {
-						packetPool.Put(packet)
-						return
-					}
-			*/
 			eventName := jsoniter.Get(data.([]byte), "event").ToString()
 			payload := jsoniter.Get(data.([]byte), "payload").ToString()
-			//			log.Info(test)
 
 			// Preparing request
 			request := requestPool.Get().(*dsa.PublishRequest)
-			//request.EventName = packet.EventName
 			request.EventName = eventName
 			request.Payload = StrToBytes(payload)
-			//			packetPool.Put(packet)
 
 			output <- request
 		},
@@ -137,7 +110,6 @@ func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
 
 	return &Source{
 		adapter:     adapter,
-		connector:   gravity_adapter.NewAdapterConnector(),
 		workerCount: *info.WorkerCount,
 		incoming:    make(chan []byte, 204800),
 		//		requests:            make(chan *dsa.PublishRequest, 102400),
@@ -187,22 +159,7 @@ func (source *Source) Init() error {
 		"channel":     source.channel,
 	}).Info("Initializing source connector")
 
-	// Initializing gravity adapter connector
-	opts := gravity_adapter.NewOptions()
-	err := source.connector.Connect(address, opts)
-	if err != nil {
-		return err
-	}
-	/*
-		// Initializing gRPC streams
-		p := source.adapter.app.GetGRPCPool()
-
-		// Register initializer for stream
-		p.SetStreamInitializer("publish", func(conn *grpc.ClientConn) (interface{}, error) {
-			client := dsa.NewDataSourceAdapterClient(conn)
-			return client.PublishEvents(context.Background())
-		})
-	*/
+	// Initializing event bus to connect to up stream to receive data
 	options := eventbus.Options{
 		ClientName:          source.adapter.clientName + "-" + source.name,
 		PingInterval:        time.Duration(source.pingInterval),
@@ -223,7 +180,7 @@ func (source *Source) Init() error {
 		options,
 	)
 
-	err = source.eventBus.Connect()
+	err := source.eventBus.Connect()
 	if err != nil {
 		return err
 	}
@@ -246,7 +203,6 @@ func (source *Source) eventReceiver() {
 	for {
 		select {
 		case msg := <-source.incoming:
-			//source.HandleEvent(msg)
 			source.parser.Push(msg)
 		}
 	}
@@ -256,7 +212,6 @@ func (source *Source) requestHandler() {
 
 	for {
 		select {
-		//case req := <-source.requests:
 		case req := <-source.parser.Output():
 			source.HandleRequest(req.(*dsa.PublishRequest))
 			requestPool.Put(req)
@@ -266,17 +221,15 @@ func (source *Source) requestHandler() {
 
 func (source *Source) HandleRequest(request *dsa.PublishRequest) {
 
-	source.connector.Publish(request.EventName, request.Payload, nil)
-	/*
-		// Getting stream from pool
-		err := source.adapter.app.GetGRPCPool().GetStream("publish", func(s interface{}) error {
-
-			// Send request
-			return s.(dsa.DataSourceAdapter_PublishEventsClient).Send(request)
-		})
+	for {
+		connector := source.adapter.app.GetAdapterConnector()
+		err := connector.Publish(request.EventName, request.Payload, nil)
 		if err != nil {
-			log.Error("Failed to get available stream:", err)
-			return
+			log.Error(err)
+			time.Sleep(time.Second)
+			continue
 		}
-	*/
+
+		break
+	}
 }
