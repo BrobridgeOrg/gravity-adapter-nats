@@ -3,6 +3,7 @@ package adapter
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -222,6 +223,10 @@ func (source *Source) requestHandler() {
 func (source *Source) HandleRequest(request *dsa.PublishRequest) {
 
 	for {
+		id := atomic.AddUint64((*uint64)(&counter), 1)
+		if id%1000 == 0 {
+			log.Info(id)
+		}
 		connector := source.adapter.app.GetAdapterConnector()
 		err := connector.Publish(request.EventName, request.Payload, nil)
 		if err != nil {
