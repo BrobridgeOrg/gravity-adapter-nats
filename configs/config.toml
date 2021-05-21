@@ -6,5 +6,9 @@ pingInterval = 10
 maxPingsOutstanding = 3
 maxReconnects = -1
 
+[adapter]
+adapter_id = "nats_adapter"
+adapter_name = "NATS Adapter"
+
 [source]
 config = "./settings/sources.json"

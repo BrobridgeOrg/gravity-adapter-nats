@@ -56,6 +56,20 @@ func (a *AppInstance) initAdapterConnector() error {
 	opts := gravity_adapter.NewOptions()
 	a.adapterConnector = gravity_adapter.NewAdapterConnectorWithClient(client, opts)
 
+	// Register adapter
+	adapterID := viper.GetString("adapter.adapter_id")
+	adapterName := viper.GetString("adapter.adapter_name")
+
+	log.WithFields(log.Fields{
+		"id":   adapterID,
+		"name": adapterName,
+	}).Info("Registering adapter")
+
+	err = a.adapterConnector.Register("nats", adapterID, adapterName)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
