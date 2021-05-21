@@ -8,7 +8,6 @@ import (
 	"unsafe"
 
 	eventbus "github.com/BrobridgeOrg/gravity-adapter-nats/pkg/eventbus/service"
-	dsa "github.com/BrobridgeOrg/gravity-api/service/dsa"
 	parallel_chunked_flow "github.com/cfsghost/parallel-chunked-flow"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/nats-io/nats.go"
@@ -24,8 +23,8 @@ var DefaultMaxPingsOutstanding int = 3
 var DefaultMaxReconnects int = -1
 
 type Packet struct {
-	EventName string      `json:"event"`
-	Payload   interface{} `json:"payload"`
+	EventName string
+	Payload   []byte
 }
 
 type Source struct {
@@ -43,9 +42,9 @@ type Source struct {
 	parser              *parallel_chunked_flow.ParallelChunkedFlow
 }
 
-var requestPool = sync.Pool{
+var packetPool = sync.Pool{
 	New: func() interface{} {
-		return &dsa.PublishRequest{}
+		return &Packet{}
 	},
 }
 
@@ -101,7 +100,7 @@ func NewSource(adapter *Adapter, name string, sourceInfo *SourceInfo) *Source {
 			payload := jsoniter.Get(data.([]byte), "payload").ToString()
 
 			// Preparing request
-			request := requestPool.Get().(*dsa.PublishRequest)
+			request := packetPool.Get().(*Packet)
 			request.EventName = eventName
 			request.Payload = StrToBytes(payload)
 
@@ -213,14 +212,14 @@ func (source *Source) requestHandler() {
 
 	for {
 		select {
-		case req := <-source.parser.Output():
-			source.HandleRequest(req.(*dsa.PublishRequest))
-			requestPool.Put(req)
+		case packet := <-source.parser.Output():
+			source.HandleRequest(packet.(*Packet))
+			packetPool.Put(packet)
 		}
 	}
 }
 
-func (source *Source) HandleRequest(request *dsa.PublishRequest) {
+func (source *Source) HandleRequest(packet *Packet) {
 
 	for {
 		id := atomic.AddUint64((*uint64)(&counter), 1)
@@ -228,7 +227,7 @@ func (source *Source) HandleRequest(request *dsa.PublishRequest) {
 			log.Info(id)
 		}
 		connector := source.adapter.app.GetAdapterConnector()
-		err := connector.Publish(request.EventName, request.Payload, nil)
+		err := connector.Publish(packet.EventName, packet.Payload, nil)
 		if err != nil {
 			log.Error(err)
 			time.Sleep(time.Second)
