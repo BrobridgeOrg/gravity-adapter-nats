@@ -19,6 +19,7 @@ type Adapter struct {
 }
 
 func NewAdapter(a app.App) *Adapter {
+
 	adapter := &Adapter{
 		app: a,
 	}
