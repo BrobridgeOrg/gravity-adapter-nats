@@ -8,7 +8,7 @@ maxPingsOutstanding = 3
 maxReconnects = -1
 
 [adapter]
-adapterId = "nats_adapter"
+adapterID = "nats_adapter"
 adapterName = "NATS Adapter"
 
 [source]
