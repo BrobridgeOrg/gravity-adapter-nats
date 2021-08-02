@@ -11,5 +11,9 @@ maxReconnects = -1
 adapterID = "nats_adapter"
 adapterName = "NATS Adapter"
 
+# Authentication
+appID = "gravity"
+accessKey = ""
+
 [source]
 config = "./settings/sources.json"
