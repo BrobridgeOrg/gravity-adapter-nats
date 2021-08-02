@@ -60,7 +60,7 @@ func (a *AppInstance) initAdapterConnector() error {
 	opts.Domain = domain
 
 	// Loading access key
-	viper.SetDefault("adapter.appID", "gravity")
+	viper.SetDefault("adapter.appID", "anonymous")
 	viper.SetDefault("adapter.accessKey", "")
 	opts.Key = keyring.NewKey(viper.GetString("adapter.appID"), viper.GetString("adapter.accessKey"))
 
