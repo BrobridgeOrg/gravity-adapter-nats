@@ -53,7 +53,7 @@ func (sm *SourceManager) Initialize() error {
 		source := NewSource(sm.adapter, name, &info)
 		err := source.Init()
 		if err != nil {
-			log.Error(err)
+			log.Fatal(err)
 			continue
 		}
 

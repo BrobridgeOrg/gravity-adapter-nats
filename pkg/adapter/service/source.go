@@ -227,7 +227,9 @@ func (source *Source) HandleRequest(packet *Packet) {
 			log.Info(id)
 		}
 		connector := source.adapter.app.GetAdapterConnector()
-		err := connector.Publish(packet.EventName, packet.Payload, nil)
+		meta := make(map[string]interface{})
+		meta["Msg-Id"] = fmt.Sprintf("%s-%s-%d", source.name, source.channel, id)
+		err := connector.Publish(packet.EventName, packet.Payload, meta)
 		if err != nil {
 			log.Error(err)
 			time.Sleep(time.Second)
